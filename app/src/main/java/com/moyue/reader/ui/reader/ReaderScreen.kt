@@ -362,42 +362,30 @@ fun ReaderScreen(
                     .padding(horizontal = 14.dp, vertical = 2.dp)
                     .onGloballyPositioned { controlsHeightPx = it.size.height }
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Slider(
-                        modifier = Modifier.weight(1f),
-                        value = sliderValue.coerceIn(0f, 1f),
-                        onValueChange = { sliderValue = it },
-                        onValueChangeFinished = {
-                            val totalChapters = state.chapters.size.coerceAtLeast(1)
-                            if (totalChapters <= 1) {
-                                val targetPage = (sliderValue * (state.pageCount - 1).coerceAtLeast(1))
-                                    .roundToInt()
-                                viewRef.value?.goToPage(targetPage)
-                            } else {
-                                val targetChapter = (sliderValue * totalChapters)
-                                    .toInt()
-                                    .coerceIn(0, totalChapters - 1)
-                                viewModel.openChapter(targetChapter, 0)
-                            }
-                        },
-                        valueRange = 0f..1f,
-                        enabled = state.chapters.size > 1 || state.pageCount > 1,
-                        colors = SliderDefaults.colors(
-                            thumbColor = palette.accent,
-                            activeTrackColor = palette.accent,
-                            inactiveTrackColor = palette.secondary.copy(alpha = 0.25f)
-                        )
+                Slider(
+                    value = sliderValue.coerceIn(0f, 1f),
+                    onValueChange = { sliderValue = it },
+                    onValueChangeFinished = {
+                        val totalChapters = state.chapters.size.coerceAtLeast(1)
+                        if (totalChapters <= 1) {
+                            val targetPage = (sliderValue * (state.pageCount - 1).coerceAtLeast(1))
+                                .roundToInt()
+                            viewRef.value?.goToPage(targetPage)
+                        } else {
+                            val targetChapter = (sliderValue * totalChapters)
+                                .toInt()
+                                .coerceIn(0, totalChapters - 1)
+                            viewModel.openChapter(targetChapter, 0)
+                        }
+                    },
+                    valueRange = 0f..1f,
+                    enabled = state.chapters.size > 1 || state.pageCount > 1,
+                    colors = SliderDefaults.colors(
+                        thumbColor = palette.accent,
+                        activeTrackColor = palette.accent,
+                        inactiveTrackColor = palette.secondary.copy(alpha = 0.25f)
                     )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = "第 ${state.currentPage + 1} / ${state.pageCount} 页",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.secondary
-                    )
-                }
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
