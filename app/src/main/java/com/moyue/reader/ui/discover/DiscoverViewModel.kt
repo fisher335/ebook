@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 data class DiscoverUiState(
@@ -56,7 +57,6 @@ class DiscoverViewModel(
     private var catalogJob: Job? = null
     private var searchJob: Job? = null
     private var previewJob: Job? = null
-    private val unavailableBooks = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     init {
         refreshSources()
@@ -113,7 +113,10 @@ class DiscoverViewModel(
         }
         catalogJob?.cancel()
         catalogJob = viewModelScope.launch {
-            runCatching { source.catalog() }
+            runCatching {
+                withTimeoutOrNull(30_000) { source.catalog() }
+                    ?: throw SourceException("书单加载超时，请稍后重试")
+            }
                 .onSuccess { catalog ->
                     _state.update {
                         it.copy(
@@ -140,12 +143,16 @@ class DiscoverViewModel(
         selectSource(sourceId)
     }
 
-    fun addCustomSource(json: String): Result<CustomSource> = runCatching {
-        registry.addCustomSource(json)
-    }.onSuccess { source ->
-        refreshSources()
-        selectSource(source.id.orEmpty())
-        _state.update { it.copy(message = "书源「${source.name.orEmpty()}」已添加") }
+    suspend fun addCustomSource(json: String): Result<CustomSource> {
+        val result = withContext(Dispatchers.IO) {
+            runCatching { registry.addCustomSource(json) }
+        }
+        result.onSuccess { source ->
+            refreshSources()
+            selectSource(source.id.orEmpty())
+            _state.update { it.copy(message = "书源「${source.name.orEmpty()}」已添加") }
+        }
+        return result
     }
 
     fun removeCustomSource(id: String) {
@@ -192,16 +199,18 @@ class DiscoverViewModel(
             val sources = _state.value.sources
                 .filter { it.searchable }
                 .sortedByDescending { it.id == currentId }
-            withTimeoutOrNull(20_000) { searchAllSources(sources, query) }
+            val completed = withTimeoutOrNull(20_000) {
+                searchAllSources(sources, query)
+            } != null
             val found = _state.value.results
             _state.update {
                 it.copy(
                     results = found,
                     searchLoading = false,
-                    searchError = if (found.isEmpty()) {
-                        "没有找到「$query」，可换个关键词，或稍后再试"
-                    } else {
-                        null
+                    searchError = when {
+                        found.isNotEmpty() -> null
+                        !completed -> "搜索超时，请检查网络后重试"
+                        else -> "没有找到「$query」，可换个关键词，或稍后再试"
                     }
                 )
             }
@@ -240,7 +249,6 @@ class DiscoverViewModel(
                                 state.copy(
                                     results = (state.results + list)
                                         .filter { it.title.isNotBlank() }
-                                        .filterNot { unavailableBooks.contains(it.sourceId + "|" + it.key) }
                                         .distinctBy { it.sourceId + it.key }
                                         .sortedBy { order[it.sourceId] ?: Int.MAX_VALUE }
                                 )
@@ -252,7 +260,6 @@ class DiscoverViewModel(
             }.awaitAll()
                 .flatten()
                 .filter { it.title.isNotBlank() }
-                .filterNot { unavailableBooks.contains(it.sourceId + "|" + it.key) }
                 .distinctBy { it.sourceId + it.key }
                 .sortedBy { order[it.sourceId] ?: Int.MAX_VALUE }
         }
@@ -289,7 +296,6 @@ class DiscoverViewModel(
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
             } catch (error: Exception) {
-                unavailableBooks += book.sourceId + "|" + book.key
                 fallbackSearch(book)
             }
         }
@@ -345,7 +351,7 @@ class DiscoverViewModel(
         if (_state.value.adding) return
         viewModelScope.launch {
             _state.update { it.copy(adding = true) }
-            runCatching { repository.addFromSource(book) }
+            runCatching { repository.addFromSource(book, _state.value.preview) }
                 .onSuccess { entity ->
                     _state.update {
                         it.copy(

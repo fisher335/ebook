@@ -83,8 +83,10 @@ class CustomSourceStore(context: Context) {
         val name = raw.name?.trim().orEmpty()
         if (name.isBlank()) throw SourceException("缺少 name（书源名称）")
         val baseUrl = raw.baseUrl?.trim().orEmpty()
-        if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
-            throw SourceException("baseUrl 必须是完整的 http(s) 网址")
+        if (!baseUrl.startsWith("https://")) {
+            // The app ships with usesCleartextTraffic=false, so http sources
+            // would fail at request time. Reject them up front with a clear message.
+            throw SourceException("baseUrl 必须是 https 网址（应用已禁用明文 HTTP）")
         }
         val contentSelector = raw.contentSelector?.trim().orEmpty()
         if (contentSelector.isBlank()) {

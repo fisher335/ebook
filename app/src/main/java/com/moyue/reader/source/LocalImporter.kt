@@ -28,6 +28,8 @@ data class ImportedBook(
     val coverSeed: Int
 )
 
+private const val MAX_TEXT_FILE_BYTES = 32L * 1024 * 1024
+
 class LocalImporter(private val context: Context) {
 
     suspend fun import(uri: Uri): ImportedBook = withContext(Dispatchers.IO) {
@@ -46,10 +48,16 @@ class LocalImporter(private val context: Context) {
             target.outputStream().use { output -> input.copyTo(output) }
         } ?: throw SourceException("无法读取所选文件")
 
-        if (isEpub) {
-            parseEpub(target, displayName.substringBeforeLast('.'))
-        } else {
-            parseTxt(target, displayName.substringBeforeLast('.'))
+        try {
+            if (isEpub) {
+                parseEpub(target, displayName.substringBeforeLast('.'))
+            } else {
+                parseTxt(target, displayName.substringBeforeLast('.'))
+            }
+        } catch (error: Throwable) {
+            // Do not leave a half-imported file behind when parsing fails.
+            target.delete()
+            throw error
         }
     }
 
@@ -63,6 +71,9 @@ class LocalImporter(private val context: Context) {
     }
 
     private fun parseTxt(file: File, fallbackTitle: String): ImportedBook {
+        if (file.length() > MAX_TEXT_FILE_BYTES) {
+            throw SourceException("TXT 文件超过 32 MB，请拆分后再导入")
+        }
         val bytes = file.readBytes()
         if (bytes.isEmpty()) throw SourceException("文件内容为空")
         val text = decodeText(bytes)

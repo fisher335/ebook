@@ -127,11 +127,11 @@ class BookRepository(
         return source.toc(sourceBook)
     }
 
-    suspend fun addFromSource(sourceBook: SourceBook): BookEntity {
+    suspend fun addFromSource(sourceBook: SourceBook, previewedToc: TocResult? = null): BookEntity {
         bookDao.findBySource(sourceBook.sourceId, sourceBook.key)?.let { return it }
         val source = sourceRegistry.get(sourceBook.sourceId)
             ?: throw com.moyue.reader.source.SourceException("未知书源")
-        val toc = source.toc(sourceBook)
+        val toc = previewedToc ?: source.toc(sourceBook)
         if (toc.chapters.isEmpty()) {
             throw com.moyue.reader.source.SourceException("这本书暂时没有可阅读的章节")
         }

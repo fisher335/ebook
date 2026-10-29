@@ -9,7 +9,11 @@ import com.moyue.reader.data.ChapterEntity
 import com.moyue.reader.data.ReaderPrefs
 import com.moyue.reader.data.SettingsRepository
 import com.moyue.reader.source.SourceException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +47,12 @@ class ReaderViewModel(
 
     private var chapterJob: Job? = null
     private var saveJob: Job? = null
+
+    /**
+     * Progress writes must survive the ViewModel being cleared when the reader
+     * screen is popped, so final saves do not use [viewModelScope].
+     */
+    private val saveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     init {
         viewModelScope.launch {
@@ -125,6 +135,8 @@ class ReaderViewModel(
                 viewModelScope.launch {
                     repository.prefetchChapter(book, index + 1)
                 }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
             _state.update {
                 it.copy(
@@ -173,17 +185,18 @@ class ReaderViewModel(
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             delay(350)
-            persistProgress(_state.value.pageCount)
+            persistProgress(_state.value)
         }
     }
 
     fun saveNow() {
         saveJob?.cancel()
-        viewModelScope.launch { persistProgress(_state.value.pageCount) }
+        val snapshot = _state.value
+        saveScope.launch { persistProgress(snapshot) }
     }
 
-    private suspend fun persistProgress(pageCount: Int) {
-        val current = _state.value
+    private suspend fun persistProgress(current: ReaderUiState) {
+        val pageCount = current.pageCount
         val book = current.book ?: return
         if (current.currentPage < 0) return
         val within = if (pageCount <= 0) 0f else {

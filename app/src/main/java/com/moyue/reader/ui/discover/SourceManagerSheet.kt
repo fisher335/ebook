@@ -21,10 +21,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -41,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,35 +55,44 @@ import androidx.compose.ui.unit.sp
 import com.moyue.reader.source.BookSource
 import com.moyue.reader.source.CustomSource
 import com.moyue.reader.source.SourceBook
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SourceManagerSheet(
     sources: List<BookSource>,
     customSources: List<CustomSource>,
-    onAdd: (String) -> Result<CustomSource>,
+    onAdd: suspend (String) -> Result<CustomSource>,
     onRemove: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var editing by remember { mutableStateOf(false) }
-    var json by remember { mutableStateOf(SAMPLE_SOURCE_JSON) }
+    var json by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var adding by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<BookSource?>(null) }
     val customIds = remember(customSources) { customSources.mapNotNull { it.id }.toSet() }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        runCatching {
-            context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                ?: throw IllegalStateException("无法读取文件")
-        }.onSuccess {
-            json = it
-            error = null
-            editing = true
-        }.onFailure {
-            error = it.message ?: "读取文件失败"
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                        ?: throw IllegalStateException("无法读取文件")
+                }
+            }.onSuccess {
+                json = it
+                error = null
+                editing = true
+            }.onFailure {
+                error = it.message ?: "读取文件失败"
+            }
         }
     }
 
@@ -191,21 +201,28 @@ fun SourceManagerSheet(
                 Spacer(Modifier.weight(1f))
                 Button(
                     onClick = {
-                        val result = onAdd(json)
-                        result.onSuccess {
-                            editing = false
-                            json = SAMPLE_SOURCE_JSON
-                            error = null
-                            onDismiss()
-                        }.onFailure {
-                            error = it.message ?: "书源校验失败"
+                        if (adding) return@Button
+                        adding = true
+                        error = null
+                        scope.launch {
+                            val result = onAdd(json)
+                            adding = false
+                            result.onSuccess {
+                                editing = false
+                                json = ""
+                                error = null
+                                onDismiss()
+                            }.onFailure {
+                                error = it.message ?: "书源校验失败"
+                            }
                         }
                     },
+                    enabled = !adding,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
-                    Text("验证并添加")
+                    Text(if (adding) "正在验证…" else "验证并添加")
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -234,7 +251,7 @@ fun SourceManagerSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            Icons.Outlined.MenuBook,
+                            Icons.AutoMirrored.Outlined.MenuBook,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(22.dp)

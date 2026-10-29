@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -24,7 +25,9 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE sourceId = :sourceId AND sourceKey = :sourceKey LIMIT 1")
     suspend fun findBySource(sourceId: String, sourceKey: String): BookEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // @Upsert performs INSERT ... ON CONFLICT DO UPDATE. Using REPLACE here
+    // would DELETE + INSERT the row and cascade-delete its chapters/bookmarks.
+    @Upsert
     suspend fun upsert(book: BookEntity)
 
     @Query(

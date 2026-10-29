@@ -2,8 +2,10 @@ package com.moyue.reader.source
 
 import com.moyue.reader.util.formatByLanguage
 import com.moyue.reader.util.htmlToText
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import java.net.URI
@@ -61,14 +63,15 @@ class RuleBookSource(
             runCatching { Regex(pattern) }.getOrNull()
         }
         val chapters = ArrayList<SourceChapter>()
+        val seen = HashSet<String>()
 
-        collectChapterLinks(doc, tocUrl, regex, chapters)
+        collectChapterLinks(doc, tocUrl, regex, chapters, seen)
         val nextSelector = config.tocNextSelector.orEmpty()
         var nextUrl = nextSelector.takeIf { it.isNotBlank() }?.let { doc.selectFirst(it)?.absUrl("href") }
         val visitedToc = hashSetOf(tocUrl)
         while (!nextUrl.isNullOrBlank() && visitedToc.add(nextUrl) && chapters.size < 10000) {
             val nextDoc = Jsoup.parse(api.getText(nextUrl), nextUrl)
-            collectChapterLinks(nextDoc, nextUrl, regex, chapters)
+            collectChapterLinks(nextDoc, nextUrl, regex, chapters, seen)
             nextUrl = nextDoc.selectFirst(nextSelector)?.absUrl("href")
         }
 
@@ -163,6 +166,23 @@ class RuleBookSource(
     private suspend fun fetchContent(url: String): String {
         val html = api.getText(url)
         val doc = Jsoup.parse(html, url)
+        val text = buildString {
+            append(contentHtml(doc))
+            val nextSelector = config.contentNextSelector.orEmpty()
+            var nextUrl = nextSelector.takeIf { it.isNotBlank() }?.let { doc.selectFirst(it)?.absUrl("href") }
+            val visited = hashSetOf(url)
+            while (!nextUrl.isNullOrBlank() && visited.add(nextUrl) && visited.size < 100) {
+                val nextDoc = Jsoup.parse(api.getText(nextUrl), nextUrl)
+                // Apply the same cleanup rules to continuation pages.
+                append(contentHtml(nextDoc))
+                nextUrl = nextDoc.selectFirst(nextSelector)?.absUrl("href")
+            }
+        }
+        val formatted = formatByLanguage(htmlToText(text))
+        return formatted.trim()
+    }
+
+    private fun contentHtml(doc: org.jsoup.nodes.Document): String {
         val container = if (contentSelector.isBlank()) {
             doc.body()
         } else {
@@ -173,24 +193,7 @@ class RuleBookSource(
                 runCatching { container.select(selector).remove() }
             }
         }
-        val text = buildString {
-            append(container.outerHtml())
-            val nextSelector = config.contentNextSelector.orEmpty()
-            var nextUrl = nextSelector.takeIf { it.isNotBlank() }?.let { doc.selectFirst(it)?.absUrl("href") }
-            val visited = hashSetOf(url)
-            while (!nextUrl.isNullOrBlank() && visited.add(nextUrl) && visited.size < 100) {
-                val nextDoc = Jsoup.parse(api.getText(nextUrl), nextUrl)
-                val nextContainer = if (contentSelector.isBlank()) {
-                    nextDoc.body()
-                } else {
-                    nextDoc.selectFirst(contentSelector) ?: nextDoc.body()
-                }
-                append(nextContainer.outerHtml())
-                nextUrl = nextDoc.selectFirst(nextSelector)?.absUrl("href")
-            }
-        }
-        val formatted = formatByLanguage(htmlToText(text))
-        return formatted.trim()
+        return container.outerHtml()
     }
 
     private fun localSearch(query: String): List<SourceBook> {
@@ -220,56 +223,89 @@ class RuleBookSource(
 
     private suspend fun loadExplore(): List<CustomCatalogItem> {
         val rule = config.exploreUrl.orEmpty().trim()
-        if (rule.isBlank() || config.exploreList.isNullOrBlank()) return emptyList()
-        val entry = firstExploreEntry(rule) ?: return emptyList()
-        val path = entry.second
-            .replace("{{page}}", "1")
-            .replace("{page}", "1")
-        val url = resolve(baseUrl, path)
-        val doc = Jsoup.parse(api.getText(url), url)
-        val category = entry.first.ifBlank { "精选" }
-        return doc.select(config.exploreList.orEmpty()).mapNotNull { item ->
-            val configuredTitle = config.exploreTitle.orEmpty()
-            val title = if (configuredTitle.isNotBlank()) {
-                extractText(item, configuredTitle)
-            } else {
-                ""
-            }.ifBlank {
-                extractAttr(item, "img@alt")?.trim().orEmpty()
-            }.ifBlank { extractText(item, "a") }
-            val link = extractAttr(item, "a@href") ?: return@mapNotNull null
-            CustomCatalogItem(
-                title = title,
-                url = normalizeBookUrl(resolve(url, link)),
-                category = category
-            )
+        val listSelector = config.exploreList.orEmpty()
+        if (rule.isBlank() || listSelector.isBlank()) return emptyList()
+        val entries = exploreEntries(rule).take(MAX_EXPLORE_CATEGORIES)
+        if (entries.isEmpty()) return emptyList()
+
+        val results = ArrayList<CustomCatalogItem>()
+        val seenLinks = HashSet<String>()
+        for ((rawCategory, rawPath) in entries) {
+            val path = rawPath
+                .replace("{{page}}", "1")
+                .replace("{page}", "1")
+            val url = resolve(baseUrl, path)
+            // One slow category must not block the whole catalog.
+            val doc = withTimeoutOrNull(10_000) {
+                try {
+                    Jsoup.parse(api.getText(url), url)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    null
+                }
+            } ?: continue
+            val category = rawCategory.ifBlank { "精选" }
+            for (item in doc.select(listSelector)) {
+                val configuredTitle = config.exploreTitle.orEmpty()
+                val title = if (configuredTitle.isNotBlank()) {
+                    extractText(item, configuredTitle)
+                } else {
+                    ""
+                }.ifBlank {
+                    extractAttr(item, "img@alt")?.trim().orEmpty()
+                }.ifBlank { extractText(item, "a") }
+                val link = extractAttr(item, "a@href") ?: continue
+                val normalized = normalizeBookUrl(resolve(url, link))
+                if (!seenLinks.add(normalized)) continue
+                results.add(
+                    CustomCatalogItem(
+                        title = title,
+                        url = normalized,
+                        category = category
+                    )
+                )
+            }
         }
+        return results
     }
 
-    private fun firstExploreEntry(rule: String): Pair<String, String>? {
+    /**
+     * Explore rules may contain several categories, either as a
+     * "category::url" line list or as a JSON array of objects.
+     */
+    private fun exploreEntries(rule: String): List<Pair<String, String>> {
         if (rule.startsWith("[") || rule.startsWith("{")) {
             return runCatching {
                 val root = com.google.gson.JsonParser.parseString(rule)
                 val array = if (root.isJsonArray) root.asJsonArray else com.google.gson.JsonArray().apply { add(root) }
-                array.mapNotNull { it.takeIf { value -> value.isJsonObject }?.asJsonObject }
-                    .mapNotNull { item ->
+                array.mapNotNull { element ->
+                    element.takeIf { value -> value.isJsonObject }?.asJsonObject?.let { item ->
                         val url = item.get("url")
                             ?.takeIf { it.isJsonPrimitive }
                             ?.asString
                             ?.trim()
                             .orEmpty()
-                        if (url.isBlank()) null
-                        else item.get("title")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty() to url
+                        if (url.isBlank()) {
+                            null
+                        } else {
+                            item.get("title")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty() to url
+                        }
                     }
-                    .firstOrNull()
-            }.getOrNull()
+                }
+            }.getOrDefault(emptyList())
         }
-        val first = rule.lineSequence().map { it.trim() }.firstOrNull { it.isNotBlank() } ?: return null
-        return if (first.contains("::")) {
-            first.substringBefore("::").trim() to first.substringAfter("::").trim()
-        } else {
-            "" to first
-        }
+        return rule.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .map { line ->
+                if (line.contains("::")) {
+                    line.substringBefore("::").trim() to line.substringAfter("::").trim()
+                } else {
+                    "" to line
+                }
+            }
+            .toList()
     }
 
     private fun normalizeBookUrl(url: String): String {
@@ -281,9 +317,9 @@ class RuleBookSource(
         doc: org.jsoup.nodes.Document,
         pageUrl: String,
         regex: Regex?,
-        chapters: ArrayList<SourceChapter>
+        chapters: ArrayList<SourceChapter>,
+        seen: MutableSet<String>
     ) {
-        val seen = chapters.mapTo(HashSet()) { it.url }
         doc.select(tocLinkSelector).forEach { element ->
             val rawHref = element.attr("href").trim()
             if (rawHref.isBlank() || rawHref.startsWith("javascript:") || rawHref.startsWith("#")) return@forEach
@@ -386,6 +422,7 @@ class RuleBookSource(
         Regex("(\\d+)(?!.*\\d)").find(url)?.groupValues?.get(1)?.toIntOrNull() ?: Int.MAX_VALUE
 
     private companion object {
+        const val MAX_EXPLORE_CATEGORIES = 12
         val QIDIAN_CHAPTER_ZERO = Regex("^https?://m\\.qidian\\.com/chapter/(\\d+)/0/?$")
         val chapterNumberRegex = Regex(
             "^(?:第\\s*|卷\\s*)([0-9０-９零〇一二三四五六七八九十百千万两兩]+)\\s*[回章卷节節篇]"

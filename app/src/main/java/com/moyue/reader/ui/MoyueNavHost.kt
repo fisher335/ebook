@@ -3,8 +3,8 @@ package com.moyue.reader.ui
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Explore
-import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -36,7 +36,7 @@ private data class TopLevelDestination(
 )
 
 private val topLevelDestinations = listOf(
-    TopLevelDestination("shelf", "书架", Icons.Outlined.MenuBook),
+    TopLevelDestination("shelf", "书架", Icons.AutoMirrored.Outlined.MenuBook),
     TopLevelDestination("discover", "书城", Icons.Outlined.Explore),
     TopLevelDestination("profile", "我的", Icons.Outlined.Person)
 )

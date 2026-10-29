@@ -21,6 +21,10 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.moyue.reader.data.ReaderPrefs
 import com.moyue.reader.data.ReaderTheme
+import java.util.Locale
 import kotlin.math.roundToInt
 
 @Composable
@@ -68,21 +73,21 @@ fun ReaderSettingsSheet(
             title = "字号",
             value = prefs.fontSizeSp,
             valueRange = 14f..30f,
-            display = "${prefs.fontSizeSp.roundToInt()} sp",
+            display = { "${it.roundToInt()} sp" },
             onChange = { value -> onUpdate { it.copy(fontSizeSp = value) } }
         )
         SettingSlider(
             title = "行距",
             value = prefs.lineSpacing,
             valueRange = 1.2f..2.3f,
-            display = String.format("%.1f", prefs.lineSpacing),
+            display = { String.format(Locale.getDefault(), "%.1f", it) },
             onChange = { value -> onUpdate { it.copy(lineSpacing = value) } }
         )
         SettingSlider(
             title = "页边距",
             value = prefs.marginDp.toFloat(),
             valueRange = 12f..36f,
-            display = "${prefs.marginDp} dp",
+            display = { "${it.roundToInt()} dp" },
             onChange = { value -> onUpdate { it.copy(marginDp = value.roundToInt()) } }
         )
 
@@ -151,20 +156,30 @@ private fun SettingSlider(
     title: String,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
-    display: String,
+    display: (Float) -> String,
     onChange: (Float) -> Unit
 ) {
+    // Keep the drag local and commit once on release: every committed change
+    // repaginates the whole chapter and writes SharedPreferences.
+    var localValue by remember(value) {
+        mutableFloatStateOf(value.coerceIn(valueRange.start, valueRange.endInclusive))
+    }
     Column(Modifier.padding(vertical = 4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(title, style = MaterialTheme.typography.bodyMedium)
-            Text(display, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            Text(
+                display(localValue),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
         Slider(
-            value = value.coerceIn(valueRange.start, valueRange.endInclusive),
-            onValueChange = onChange,
+            value = localValue,
+            onValueChange = { localValue = it },
+            onValueChangeFinished = { onChange(localValue) },
             valueRange = valueRange,
             colors = SliderDefaults.colors(
                 thumbColor = MaterialTheme.colorScheme.primary,

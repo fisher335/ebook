@@ -22,11 +22,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowForward
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FilterAlt
-import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Tune
@@ -96,7 +96,10 @@ fun DiscoverScreen(
     var showSourceManager by rememberSaveable { mutableStateOf(false) }
 
     val categories = remember(state.catalog) {
-        listOf("全部") + state.catalog.map { it.category }.distinct()
+        listOf("全部") + state.catalog
+            .map { it.category }
+            .filter { it.isNotBlank() && it != "全部" }
+            .distinct()
     }
 
     LaunchedEffect(state.sourceId) {
@@ -316,11 +319,11 @@ fun DiscoverScreen(
                             }
                         }
                     }
-                    val filtered = if (selectedCategory == "全部") {
+                    val filtered = (if (selectedCategory == "全部") {
                         state.catalog
                     } else {
                         state.catalog.filter { it.category == selectedCategory }
-                    }
+                    }).distinctBy { it.sourceId + it.key }
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -409,7 +412,7 @@ private fun SourceEmptyHint() {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
-            Icons.Outlined.MenuBook,
+            Icons.AutoMirrored.Outlined.MenuBook,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
             modifier = Modifier.size(38.dp)
@@ -542,7 +545,7 @@ private fun DiscoverBookRow(
         }
         Spacer(Modifier.width(8.dp))
         Icon(
-            imageVector = Icons.Outlined.ArrowForward,
+            imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.outline,
             modifier = Modifier.size(18.dp)
@@ -606,7 +609,7 @@ private fun BookDetailSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        Icons.Outlined.MenuBook,
+                        Icons.AutoMirrored.Outlined.MenuBook,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(14.dp)

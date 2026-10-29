@@ -1,6 +1,7 @@
 ﻿package com.moyue.reader.ui.reader
 
 import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.LinearGradient
@@ -50,21 +51,21 @@ class ReaderView @JvmOverloads constructor(
     var onCenterTap: (() -> Unit)? = null
 
     private val density = resources.displayMetrics.density
-    private val scaledDensity = resources.displayMetrics.scaledDensity
+    private val scaledDensity = density * resources.configuration.fontScale
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private val velocityTracker = VelocityTracker.obtain()
     private val minFlingVelocity = 650f * density
     private val swipeThresholdFraction = 0.1f
 
     private val mainPaint = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG)
-    private val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val headerPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
     private val chromeLinePaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val placeholderPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private var style = ReaderStyle()
-    private var chapterKey: String = ""
     private var chapterText: String = ""
+    private var backgroundShader: Shader? = null
     private var textLayout: StaticLayout? = null
     private var pages: List<PageRange> = emptyList()
     private var pageCount = 0
@@ -101,8 +102,7 @@ class ReaderView @JvmOverloads constructor(
         configurePaints()
     }
 
-    fun setChapter(key: String, title: String, text: String, initialPage: Int) {
-        chapterKey = key
+    fun setChapter(title: String, text: String, initialPage: Int) {
         chapterText = text
         if (title.isNotBlank()) {
             style = style.copy(chapterTitle = title)
@@ -130,18 +130,31 @@ class ReaderView @JvmOverloads constructor(
     fun updateStyle(newStyle: ReaderStyle) {
         if (newStyle == style) return
         val anchorOffset = currentPageRange()?.startOffset ?: 0
+        val layoutChanged = newStyle.layoutDiffersFrom(style)
+        val colorsChanged = newStyle.backgroundColor != style.backgroundColor ||
+            newStyle.backgroundColorAlt != style.backgroundColorAlt
         style = newStyle
         configurePaints()
-        if (width > 0 && height > 0 && chapterText.isNotEmpty()) {
+        if (colorsChanged) backgroundShader = null
+        if (layoutChanged && width > 0 && height > 0 && chapterText.isNotEmpty()) {
             paginate()
             currentPage = pageIndexForOffset(anchorOffset)
             dragOffset = 0f
             invalidate()
             notifyPageChanged()
         } else {
+            // Title/chrome-only changes just need a redraw, not a re-layout.
             invalidate()
         }
     }
+
+    private fun ReaderStyle.layoutDiffersFrom(previous: ReaderStyle): Boolean =
+        fontSp != previous.fontSp ||
+            lineSpacing != previous.lineSpacing ||
+            marginDp != previous.marginDp ||
+            statusBarInsetPx != previous.statusBarInsetPx ||
+            navigationBarInsetPx != previous.navigationBarInsetPx ||
+            bottomOverlayPx != previous.bottomOverlayPx
 
     fun goToPage(page: Int) {
         if (pages.isEmpty()) return
@@ -184,6 +197,7 @@ class ReaderView @JvmOverloads constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
+        backgroundShader = null
         if (w > 0 && h > 0 && chapterText.isNotEmpty()) {
             val anchor = currentPageRange()?.startOffset ?: 0
             paginate()
@@ -198,6 +212,10 @@ class ReaderView @JvmOverloads constructor(
         }
     }
 
+    // Layout.BREAK_STRATEGY_SIMPLE has the same value as
+    // android.graphics.text.LineBreaker.BREAK_STRATEGY_SIMPLE; lint only
+    // accepts the newer symbolic constant.
+    @SuppressLint("WrongConstant")
     private fun paginate() {
         if (width <= 0 || height <= 0 || chapterText.isEmpty()) {
             textLayout = null
@@ -287,25 +305,32 @@ class ReaderView @JvmOverloads constructor(
     }
 
     private fun drawBackground(canvas: Canvas) {
-        backgroundPaint.shader = LinearGradient(
+        val shader = backgroundShader ?: LinearGradient(
             0f, 0f, 0f, height.toFloat(),
             style.backgroundColor,
             style.backgroundColorAlt,
             Shader.TileMode.CLAMP
-        )
+        ).also { backgroundShader = it }
+        backgroundPaint.shader = shader
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
-        backgroundPaint.shader = null
     }
 
     private fun drawPage(canvas: Canvas, pageIndex: Int, xOffset: Float) {
         val layout = textLayout ?: return
         val page = pages.getOrNull(pageIndex) ?: return
+        // The available height can include the top slice of the line after
+        // endLine. Clip to the last line of this page as well, otherwise that
+        // line is visible at the bottom here and repeated at the top of the
+        // next page.
+        val pageBottom = contentTop + (
+            layout.getLineBottom(page.endLine) - layout.getLineTop(page.startLine)
+            )
         canvas.save()
         canvas.clipRect(
             contentLeft + xOffset,
             contentTop,
             contentRight + xOffset,
-            contentBottom
+            pageBottom.coerceAtMost(contentBottom)
         )
         canvas.translate(contentLeft + xOffset, contentTop - layout.getLineTop(page.startLine))
         layout.draw(canvas)
@@ -355,7 +380,7 @@ class ReaderView @JvmOverloads constructor(
         val chapterWidth = (contentWidth * 0.5f).toInt()
         val chapterLabel = TextUtils.ellipsize(
             style.chapterTitle,
-            TextPaint(headerPaint),
+            headerPaint,
             chapterWidth.toFloat(),
             TextUtils.TruncateAt.END
         )
@@ -383,12 +408,12 @@ class ReaderView @JvmOverloads constructor(
         x: Float,
         y: Float,
         maxWidth: Int,
-        paint: Paint
+        paint: TextPaint
     ) {
         if (text.isEmpty() || maxWidth <= 0) return
         val ellipsized = TextUtils.ellipsize(
             text,
-            TextPaint(paint),
+            paint,
             maxWidth.toFloat(),
             TextUtils.TruncateAt.END
         )
@@ -433,6 +458,7 @@ class ReaderView @JvmOverloads constructor(
                 if (dragging) {
                     handleSwipe(dx, velocityX)
                 } else if (abs(dx) < touchSlop && abs(dy) < touchSlop) {
+                    performClick()
                     handleTap(event.x)
                 }
                 dragging = false
@@ -448,6 +474,16 @@ class ReaderView @JvmOverloads constructor(
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
+
+    override fun onDetachedFromWindow() {
+        animator?.cancel()
+        super.onDetachedFromWindow()
     }
 
     private fun handleSwipe(dx: Float, velocityX: Float) {

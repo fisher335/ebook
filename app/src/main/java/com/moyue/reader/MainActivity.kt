@@ -13,6 +13,7 @@ import com.moyue.reader.ui.MoyueNavHost
 import com.moyue.reader.ui.theme.MoyueTheme
 
 class MainActivity : ComponentActivity() {
+    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

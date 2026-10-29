@@ -141,6 +141,75 @@ class RuleBookSourceTest {
     }
 
     @Test
+    fun catalogLoadsEveryExploreCategory() = runBlocking {
+        val config = CustomSource(
+            id = "custom_multi",
+            name = "多分类书源",
+            baseUrl = server.url("/").toString().trimEnd('/'),
+            exploreUrl = "第一类::/a/\n第二类::/b/",
+            exploreList = ".item",
+            exploreTitle = "h2",
+            contentSelector = ".content"
+        )
+        val multiSource = RuleBookSource(config, ApiClient(OkHttpClient()))
+        server.enqueue(
+            MockResponse().setBody(
+                """<div class="item"><h2>A</h2><a href="/book/a/">阅读</a></div>"""
+            )
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """<div class="item"><h2>B</h2><a href="/book/b/">阅读</a></div>"""
+            )
+        )
+
+        val catalog = multiSource.catalog()
+        assertEquals(2, catalog.size)
+        assertEquals(setOf("第一类", "第二类"), catalog.map { it.category }.toSet())
+    }
+
+    @Test
+    fun continuationPagesAlsoRemoveUnwantedNodes() = runBlocking {
+        val config = CustomSource(
+            id = "custom_paged",
+            name = "分页书源",
+            baseUrl = server.url("/").toString().trimEnd('/'),
+            explore = listOf(CustomCatalogItem(title = "书", url = "/book/1/")),
+            contentSelector = ".chapter-content",
+            contentRemove = ".ads",
+            contentNextSelector = "a.next"
+        )
+        val pagedSource = RuleBookSource(config, ApiClient(OkHttpClient()))
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                <html><body>
+                  <div class="chapter-content"><p>第一页正文</p><div class="ads">广告一</div></div>
+                  <a class="next" href="/book/1/2.html">下一页</a>
+                </body></html>
+                """.trimIndent()
+            )
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                <html><body>
+                  <div class="chapter-content"><p>第二页正文</p><div class="ads">广告二</div></div>
+                </body></html>
+                """.trimIndent()
+            )
+        )
+
+        val content = pagedSource.chapter(
+            pagedSource.catalog().first(),
+            SourceChapter(0, "第一章", server.url("/book/1/1.html").toString())
+        )
+        assertTrue(content.contains("第一页正文"))
+        assertTrue(content.contains("第二页正文"))
+        assertFalse(content.contains("广告"))
+    }
+
+    @Test
     fun searchParsesRemoteList() = runBlocking {
         server.enqueue(
             MockResponse().setBody(

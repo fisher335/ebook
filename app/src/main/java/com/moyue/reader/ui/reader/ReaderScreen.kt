@@ -37,6 +37,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Bookmarks
@@ -44,8 +46,6 @@ import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.List
-import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
@@ -265,7 +265,6 @@ fun ReaderScreen(
                 if (state.content.isNotBlank() && (view.tag as? Int) != contentKey) {
                     view.tag = contentKey
                     view.setChapter(
-                        key = "${book?.id ?: bookId}:${state.chapterIndex}",
                         title = state.chapterTitle,
                         text = state.content,
                         initialPage = state.currentPage
@@ -390,7 +389,7 @@ fun ReaderScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    ReaderControl(Icons.Outlined.List, "目录", palette.text) {
+                    ReaderControl(Icons.AutoMirrored.Outlined.List, "目录", palette.text) {
                         showToc = true
                     }
                     ReaderControl(Icons.Outlined.Bookmarks, "书签", palette.text) {
@@ -444,7 +443,7 @@ fun ReaderScreen(
                     modifier = Modifier.padding(36.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.MenuBook,
+                        imageVector = Icons.AutoMirrored.Outlined.MenuBook,
                         contentDescription = null,
                         tint = palette.accent,
                         modifier = Modifier.size(42.dp)
@@ -598,7 +597,7 @@ private fun TocContent(
                 )
             }
             Icon(
-                Icons.Outlined.List,
+                Icons.AutoMirrored.Outlined.List,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(22.dp)

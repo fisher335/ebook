@@ -30,8 +30,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -484,7 +484,7 @@ private fun ContinueReadingCard(book: BookEntity, onClick: () -> Unit) {
                             )
                             Spacer(Modifier.width(3.dp))
                             Icon(
-                                imageVector = Icons.Outlined.ArrowForward,
+                                imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
                                 contentDescription = null,
                                 tint = Color(0xFFF7F1E5),
                                 modifier = Modifier.size(15.dp)
@@ -618,11 +618,11 @@ private fun EmptyShelf(onDiscover: () -> Unit) {
                 val bottom = h * 0.78f
                 val path = androidx.compose.ui.graphics.Path().apply {
                     moveTo(left.x, left.y)
-                    quadraticBezierTo(w * 0.35f, h * 0.2f, w * 0.5f, h * 0.34f)
-                    quadraticBezierTo(w * 0.65f, h * 0.2f, right.x, right.y)
+                    quadraticTo(w * 0.35f, h * 0.2f, w * 0.5f, h * 0.34f)
+                    quadraticTo(w * 0.65f, h * 0.2f, right.x, right.y)
                     lineTo(right.x, bottom)
-                    quadraticBezierTo(w * 0.65f, h * 0.68f, w * 0.5f, h * 0.82f)
-                    quadraticBezierTo(w * 0.35f, h * 0.68f, left.x, bottom)
+                    quadraticTo(w * 0.65f, h * 0.68f, w * 0.5f, h * 0.82f)
+                    quadraticTo(w * 0.35f, h * 0.68f, left.x, bottom)
                     close()
                 }
                 drawPath(
@@ -683,7 +683,7 @@ private fun EmptyShelf(onDiscover: () -> Unit) {
             )
             Spacer(Modifier.width(4.dp))
             Icon(
-                Icons.Outlined.ArrowForward,
+                Icons.AutoMirrored.Outlined.ArrowForward,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.size(17.dp)

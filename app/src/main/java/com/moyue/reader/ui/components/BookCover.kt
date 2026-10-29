@@ -162,30 +162,3 @@ fun BookCover(
         }
     }
 }
-
-@Composable
-fun ContinueReadingCover(
-    title: String,
-    author: String,
-    seed: Int,
-    modifier: Modifier = Modifier
-) {
-    BookCover(
-        title = title,
-        author = author,
-        seed = seed,
-        modifier = modifier,
-        footer = null
-    )
-}
-
-@Composable
-fun MiniCover(title: String, author: String, seed: Int, modifier: Modifier = Modifier) {
-    BookCover(
-        title = title,
-        author = author,
-        seed = seed,
-        modifier = modifier,
-        footer = null
-    )
-}
